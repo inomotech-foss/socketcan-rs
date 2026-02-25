@@ -92,7 +92,10 @@ impl CanSocket {
     /// Read a CAN frame from the socket asynchronously
     pub async fn read_frame(&self) -> IoResult<CanFrame> {
         self.0
-            .async_io(Interest::READABLE, |inner| inner.read_frame())
+            // TODO: if this works, how do we use it for poll_next??
+            .async_io(Interest::READABLE | Interest::ERROR, |inner| {
+                inner.read_frame()
+            })
             .await
     }
 }
