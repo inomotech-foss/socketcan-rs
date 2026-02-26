@@ -85,7 +85,9 @@ impl CanSocket {
     /// Write a CAN frame to the socket asynchronously
     pub async fn write_frame(&self, frame: CanFrame) -> IoResult<()> {
         self.0
-            .async_io(Interest::WRITABLE, |inner| inner.write_frame(&frame))
+            .async_io(Interest::WRITABLE | Interest::ERROR, |inner| {
+                inner.write_frame(&frame)
+            })
             .await
     }
 
@@ -97,20 +99,6 @@ impl CanSocket {
                 inner.read_frame()
             })
             .await
-    }
-}
-
-impl Stream for CanSocket {
-    type Item = Result<CanFrame>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        loop {
-            let mut ready_guard = ready!(self.0.poll_read_ready(cx))?;
-            match ready_guard.try_io(|inner| inner.get_ref().read_frame()) {
-                Ok(result) => return Poll::Ready(Some(result.map_err(|e| e.into()))),
-                Err(_would_block) => continue,
-            }
-        }
     }
 }
 
@@ -195,29 +183,19 @@ impl CanFdSocket {
         F: Into<CanAnyFrame> + AsPtr,
     {
         self.0
-            .async_io(Interest::WRITABLE, |inner| inner.write_frame(frame))
+            .async_io(Interest::WRITABLE | Interest::ERROR, |inner| {
+                inner.write_frame(frame)
+            })
             .await
     }
 
     /// Reads a CAN FD frame from the socket asynchronously
     pub async fn read_frame(&self) -> IoResult<CanAnyFrame> {
         self.0
-            .async_io(Interest::READABLE, |inner| inner.read_frame())
+            .async_io(Interest::READABLE | Interest::ERROR, |inner| {
+                inner.read_frame()
+            })
             .await
-    }
-}
-
-impl Stream for CanFdSocket {
-    type Item = Result<CanAnyFrame>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        loop {
-            let mut ready_guard = ready!(self.0.poll_read_ready(cx))?;
-            match ready_guard.try_io(|inner| inner.get_ref().read_frame()) {
-                Ok(result) => return Poll::Ready(Some(result.map_err(|e| e.into()))),
-                Err(_would_block) => continue,
-            }
-        }
     }
 }
 
@@ -319,13 +297,13 @@ mod tests {
         )
     }
 
-    /// Receive a frame from the CanSocket using the `Stream` trait
-    async fn recv_frame_with_stream(mut socket: CanSocket) -> Result<CanSocket> {
-        select!(
-            frame = socket.next().fuse() => if let Some(_frame) = frame { Ok(socket) } else { panic!("unexpected") },
-            _timeout = Delay::new(TIMEOUT).fuse() => Err(IoErrorKind::TimedOut.into()),
-        )
-    }
+    // /// Receive a frame from the CanSocket using the `Stream` trait
+    // async fn recv_frame_with_stream(mut socket: CanSocket) -> Result<CanSocket> {
+    //     select!(
+    //         frame = socket.next().fuse() => if let Some(_frame) = frame { Ok(socket) } else { panic!("unexpected") },
+    //         _timeout = Delay::new(TIMEOUT).fuse() => Err(IoErrorKind::TimedOut.into()),
+    //     )
+    // }
 
     /// Receive a frame from the CanSocket using the `tokio::io::AsyncRead` trait
     async fn recv_frame_with_async_read(mut socket: CanSocket) -> Result<CanSocket> {
@@ -358,13 +336,13 @@ mod tests {
         )
     }
 
-    /// Receive a frame from the CanFdSocket using the `Stream` trait
-    async fn recv_frame_fd_with_stream(mut socket: CanFdSocket) -> Result<CanFdSocket> {
-        select!(
-            frame = socket.next().fuse() => if let Some(_frame) = frame { Ok(socket) } else { panic!("unexpected") },
-            _timeout = Delay::new(TIMEOUT).fuse() => Err(IoErrorKind::TimedOut.into()),
-        )
-    }
+    // /// Receive a frame from the CanFdSocket using the `Stream` trait
+    // async fn recv_frame_fd_with_stream(mut socket: CanFdSocket) -> Result<CanFdSocket> {
+    //     select!(
+    //         frame = socket.next().fuse() => if let Some(_frame) = frame { Ok(socket) } else { panic!("unexpected") },
+    //         _timeout = Delay::new(TIMEOUT).fuse() => Err(IoErrorKind::TimedOut.into()),
+    //     )
+    // }
 
     /// Receive a frame from the CanFdSocket using the `tokio::io::AsyncWrite` trait
     async fn recv_frame_fd_with_async_read(mut socket: CanFdSocket) -> Result<CanFdSocket> {
@@ -416,24 +394,24 @@ mod tests {
         Ok(())
     }
 
-    #[serial]
-    #[tokio::test]
-    async fn test_receive_with_stream() -> Result<()> {
-        let socket1 = CanSocket::open("vcan0").unwrap();
-        let socket2 = CanSocket::open("vcan0").unwrap();
+    // #[serial]
+    // #[tokio::test]
+    // async fn test_receive_with_stream() -> Result<()> {
+    //     let socket1 = CanSocket::open("vcan0").unwrap();
+    //     let socket2 = CanSocket::open("vcan0").unwrap();
 
-        let send_frames = future::try_join(write_frame(&socket1), write_frame(&socket1));
+    //     let send_frames = future::try_join(write_frame(&socket1), write_frame(&socket1));
 
-        let recv_frames = async {
-            let socket2 = recv_frame_with_stream(socket2).await?;
-            let _socket2 = recv_frame_with_stream(socket2).await;
-            Ok(())
-        };
+    //     let recv_frames = async {
+    //         let socket2 = recv_frame_with_stream(socket2).await?;
+    //         let _socket2 = recv_frame_with_stream(socket2).await;
+    //         Ok(())
+    //     };
 
-        try_join!(recv_frames, send_frames)?;
+    //     try_join!(recv_frames, send_frames)?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     #[serial]
     #[tokio::test]
@@ -495,47 +473,47 @@ mod tests {
         Ok(())
     }
 
-    #[serial]
-    #[tokio::test]
-    async fn test_receive_can_fd_canfd_with_stream() -> Result<()> {
-        let socket1 = CanFdSocket::open("vcan0").unwrap();
-        let socket2 = CanFdSocket::open("vcan0").unwrap();
+    // #[serial]
+    // #[tokio::test]
+    // async fn test_receive_can_fd_canfd_with_stream() -> Result<()> {
+    //     let socket1 = CanFdSocket::open("vcan0").unwrap();
+    //     let socket2 = CanFdSocket::open("vcan0").unwrap();
 
-        let send_frames = future::try_join(
-            write_frame_fd_canfd(&socket1),
-            write_frame_fd_canfd(&socket1),
-        );
+    //     let send_frames = future::try_join(
+    //         write_frame_fd_canfd(&socket1),
+    //         write_frame_fd_canfd(&socket1),
+    //     );
 
-        let recv_frames = async {
-            let socket2 = recv_frame_fd_with_stream(socket2).await?;
-            let _socket2 = recv_frame_fd_with_stream(socket2).await;
-            Ok(())
-        };
+    //     let recv_frames = async {
+    //         let socket2 = recv_frame_fd_with_stream(socket2).await?;
+    //         let _socket2 = recv_frame_fd_with_stream(socket2).await;
+    //         Ok(())
+    //     };
 
-        try_join!(recv_frames, send_frames)?;
+    //     try_join!(recv_frames, send_frames)?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    #[serial]
-    #[tokio::test]
-    async fn test_receive_can_fd_can_with_stream() -> Result<()> {
-        let socket1 = CanFdSocket::open("vcan0").unwrap();
-        let socket2 = CanFdSocket::open("vcan0").unwrap();
+    // #[serial]
+    // #[tokio::test]
+    // async fn test_receive_can_fd_can_with_stream() -> Result<()> {
+    //     let socket1 = CanFdSocket::open("vcan0").unwrap();
+    //     let socket2 = CanFdSocket::open("vcan0").unwrap();
 
-        let send_frames =
-            future::try_join(write_frame_fd_can(&socket1), write_frame_fd_can(&socket1));
+    //     let send_frames =
+    //         future::try_join(write_frame_fd_can(&socket1), write_frame_fd_can(&socket1));
 
-        let recv_frames = async {
-            let socket2 = recv_frame_fd_with_stream(socket2).await?;
-            let _socket2 = recv_frame_fd_with_stream(socket2).await;
-            Ok(())
-        };
+    //     let recv_frames = async {
+    //         let socket2 = recv_frame_fd_with_stream(socket2).await?;
+    //         let _socket2 = recv_frame_fd_with_stream(socket2).await;
+    //         Ok(())
+    //     };
 
-        try_join!(recv_frames, send_frames)?;
+    //     try_join!(recv_frames, send_frames)?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     #[serial]
     #[tokio::test]
@@ -555,117 +533,117 @@ mod tests {
         Ok(())
     }
 
-    #[serial]
-    #[tokio::test]
-    async fn test_sink_stream() -> Result<()> {
-        let socket1 = CanSocket::open("vcan0").unwrap();
-        let socket2 = CanSocket::open("vcan0").unwrap();
+    // #[serial]
+    // #[tokio::test]
+    // async fn test_sink_stream() -> Result<()> {
+    //     let socket1 = CanSocket::open("vcan0").unwrap();
+    //     let socket2 = CanSocket::open("vcan0").unwrap();
 
-        let frame_id_1 = CanFrame::from_raw_id(0x01, &[0u8]).unwrap();
-        let frame_id_2 = CanFrame::from_raw_id(0x02, &[0u8]).unwrap();
-        let frame_id_3 = CanFrame::from_raw_id(0x03, &[0u8]).unwrap();
+    //     let frame_id_1 = CanFrame::from_raw_id(0x01, &[0u8]).unwrap();
+    //     let frame_id_2 = CanFrame::from_raw_id(0x02, &[0u8]).unwrap();
+    //     let frame_id_3 = CanFrame::from_raw_id(0x03, &[0u8]).unwrap();
 
-        let (mut sink, _stream) = socket1.split();
-        let (_sink, stream) = socket2.split();
+    //     let (mut sink, _stream) = socket1.split();
+    //     let (_sink, stream) = socket2.split();
 
-        let count_ids_less_than_3 = stream
-            .map(|x| x.unwrap())
-            .take_while(|frame| future::ready(frame.raw_id() < 3))
-            .fold(0u8, |acc, _frame| async move { acc + 1 });
+    //     let count_ids_less_than_3 = stream
+    //         .map(|x| x.unwrap())
+    //         .take_while(|frame| future::ready(frame.raw_id() < 3))
+    //         .fold(0u8, |acc, _frame| async move { acc + 1 });
 
-        let send_frames = async {
-            sink.send(frame_id_1).await?;
-            sink.send(frame_id_2).await?;
-            sink.send(frame_id_3).await?;
-            println!("Sent 3 frames");
-            Ok::<(), Error>(())
-        };
+    //     let send_frames = async {
+    //         sink.send(frame_id_1).await?;
+    //         sink.send(frame_id_2).await?;
+    //         sink.send(frame_id_3).await?;
+    //         println!("Sent 3 frames");
+    //         Ok::<(), Error>(())
+    //     };
 
-        let (x, frame_send_r) = future::join(count_ids_less_than_3, send_frames).await;
-        frame_send_r?;
+    //     let (x, frame_send_r) = future::join(count_ids_less_than_3, send_frames).await;
+    //     frame_send_r?;
 
-        assert_eq!(x, 2);
+    //     assert_eq!(x, 2);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    #[serial]
-    #[tokio::test]
-    async fn test_sink_stream_fd_canfd() -> Result<()> {
-        let socket1 = CanFdSocket::open("vcan0").unwrap();
-        let socket2 = CanFdSocket::open("vcan0").unwrap();
+    // #[serial]
+    // #[tokio::test]
+    // async fn test_sink_stream_fd_canfd() -> Result<()> {
+    //     let socket1 = CanFdSocket::open("vcan0").unwrap();
+    //     let socket2 = CanFdSocket::open("vcan0").unwrap();
 
-        let frame_id_1 = CanFdFrame::from_raw_id(0x01, &[0u8]).unwrap();
-        let frame_id_2 = CanFdFrame::from_raw_id(0x02, &[0u8]).unwrap();
-        let frame_id_3 = CanFdFrame::from_raw_id(0x03, &[0u8]).unwrap();
+    //     let frame_id_1 = CanFdFrame::from_raw_id(0x01, &[0u8]).unwrap();
+    //     let frame_id_2 = CanFdFrame::from_raw_id(0x02, &[0u8]).unwrap();
+    //     let frame_id_3 = CanFdFrame::from_raw_id(0x03, &[0u8]).unwrap();
 
-        let (mut sink, _stream) = socket1.split();
-        let (_sink, stream) = socket2.split();
+    //     let (mut sink, _stream) = socket1.split();
+    //     let (_sink, stream) = socket2.split();
 
-        let count_ids_less_than_3 = stream
-            .map(|x| x.unwrap())
-            .take_while(|frame| {
-                if let CanAnyFrame::Fd(frame) = frame {
-                    future::ready(frame.raw_id() < 3)
-                } else {
-                    future::ready(false)
-                }
-            })
-            .fold(0u8, |acc, _frame| async move { acc + 1 });
+    //     let count_ids_less_than_3 = stream
+    //         .map(|x| x.unwrap())
+    //         .take_while(|frame| {
+    //             if let CanAnyFrame::Fd(frame) = frame {
+    //                 future::ready(frame.raw_id() < 3)
+    //             } else {
+    //                 future::ready(false)
+    //             }
+    //         })
+    //         .fold(0u8, |acc, _frame| async move { acc + 1 });
 
-        let send_frames = async {
-            sink.send(frame_id_1.into()).await?;
-            sink.send(frame_id_2.into()).await?;
-            sink.send(frame_id_3.into()).await?;
-            println!("Sent 3 frames");
-            Ok::<(), Error>(())
-        };
+    //     let send_frames = async {
+    //         sink.send(frame_id_1.into()).await?;
+    //         sink.send(frame_id_2.into()).await?;
+    //         sink.send(frame_id_3.into()).await?;
+    //         println!("Sent 3 frames");
+    //         Ok::<(), Error>(())
+    //     };
 
-        let (x, frame_send_r) = future::join(count_ids_less_than_3, send_frames).await;
-        frame_send_r?;
+    //     let (x, frame_send_r) = future::join(count_ids_less_than_3, send_frames).await;
+    //     frame_send_r?;
 
-        assert_eq!(x, 2);
+    //     assert_eq!(x, 2);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    #[serial]
-    #[tokio::test]
-    async fn test_sink_stream_fd_can() -> Result<()> {
-        let socket1 = CanFdSocket::open("vcan0").unwrap();
-        let socket2 = CanFdSocket::open("vcan0").unwrap();
+    // #[serial]
+    // #[tokio::test]
+    // async fn test_sink_stream_fd_can() -> Result<()> {
+    //     let socket1 = CanFdSocket::open("vcan0").unwrap();
+    //     let socket2 = CanFdSocket::open("vcan0").unwrap();
 
-        let frame_id_1 = CanFrame::from_raw_id(0x01, &[0u8]).unwrap();
-        let frame_id_2 = CanFrame::from_raw_id(0x02, &[0u8]).unwrap();
-        let frame_id_3 = CanFrame::from_raw_id(0x03, &[0u8]).unwrap();
+    //     let frame_id_1 = CanFrame::from_raw_id(0x01, &[0u8]).unwrap();
+    //     let frame_id_2 = CanFrame::from_raw_id(0x02, &[0u8]).unwrap();
+    //     let frame_id_3 = CanFrame::from_raw_id(0x03, &[0u8]).unwrap();
 
-        let (mut sink, _stream) = socket1.split();
-        let (_sink, stream) = socket2.split();
+    //     let (mut sink, _stream) = socket1.split();
+    //     let (_sink, stream) = socket2.split();
 
-        let count_ids_less_than_3 = stream
-            .map(|x| x.unwrap())
-            .take_while(|frame| {
-                if let CanAnyFrame::Normal(frame) = frame {
-                    future::ready(frame.raw_id() < 3)
-                } else {
-                    future::ready(false)
-                }
-            })
-            .fold(0u8, |acc, _frame| async move { acc + 1 });
+    //     let count_ids_less_than_3 = stream
+    //         .map(|x| x.unwrap())
+    //         .take_while(|frame| {
+    //             if let CanAnyFrame::Normal(frame) = frame {
+    //                 future::ready(frame.raw_id() < 3)
+    //             } else {
+    //                 future::ready(false)
+    //             }
+    //         })
+    //         .fold(0u8, |acc, _frame| async move { acc + 1 });
 
-        let send_frames = async {
-            sink.send(frame_id_1.into()).await?;
-            sink.send(frame_id_2.into()).await?;
-            sink.send(frame_id_3.into()).await?;
-            println!("Sent 3 frames");
-            Ok::<(), Error>(())
-        };
+    //     let send_frames = async {
+    //         sink.send(frame_id_1.into()).await?;
+    //         sink.send(frame_id_2.into()).await?;
+    //         sink.send(frame_id_3.into()).await?;
+    //         println!("Sent 3 frames");
+    //         Ok::<(), Error>(())
+    //     };
 
-        let (x, frame_send_r) = future::join(count_ids_less_than_3, send_frames).await;
-        frame_send_r?;
+    //     let (x, frame_send_r) = future::join(count_ids_less_than_3, send_frames).await;
+    //     frame_send_r?;
 
-        assert_eq!(x, 2);
+    //     assert_eq!(x, 2);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }
