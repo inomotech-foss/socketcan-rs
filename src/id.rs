@@ -269,7 +269,7 @@ mod tests {
         assert!(matches!(id, CanId::Standard(_)));
         match sid {
             Id::Standard(sid) => assert_eq!(id.as_raw(), sid.as_raw() as u32),
-            _ => assert!(false),
+            _ => panic!("expected standard ID"),
         };
 
         let eid = Id::from(ExtendedId::MAX);
@@ -279,7 +279,7 @@ mod tests {
         assert!(matches!(id, CanId::Extended(_)));
         match eid {
             Id::Extended(eid) => assert_eq!(id.as_raw(), eid.as_raw()),
-            _ => assert!(false),
+            _ => panic!("expected standard ID"),
         }
     }
 

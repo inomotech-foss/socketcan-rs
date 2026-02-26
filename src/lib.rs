@@ -152,42 +152,12 @@ pub use frame::{
     Frame,
 };
 
-#[cfg(feature = "dump")]
-pub mod dump;
-
 pub mod socket;
 pub use socket::{CanFdSocket, CanFilter, CanSocket, ShouldRetry, Socket, SocketOptions};
-
-#[cfg(feature = "netlink")]
-pub mod nl;
-
-#[cfg(feature = "netlink")]
-pub use nl::{CanCtrlMode, CanInterface, InterfaceCanParams};
 
 /// Optional tokio support
 #[cfg(feature = "tokio")]
 pub mod tokio;
-
-/// Optional support for async-io-based async runtimes, like async-std and smol.
-#[cfg(any(feature = "async-io", feature = "async-std", feature = "smol"))]
-pub mod async_io;
-
-/// Using the specific definition for 'smol', just re-export the async_io module.
-#[cfg(feature = "smol")]
-pub mod smol {
-    pub use crate::async_io::*;
-}
-
-/// Using the specific definition for 'async_std', just re-export the async_io module.
-#[cfg(feature = "async-std")]
-pub mod async_std {
-    pub use crate::async_io::*;
-}
-
-#[cfg(feature = "enumerate")]
-pub mod enumerate;
-#[cfg(feature = "enumerate")]
-pub use enumerate::available_interfaces;
 
 // ===== helper functions =====
 

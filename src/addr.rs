@@ -13,9 +13,9 @@
 
 use crate::id::id_to_canid_t;
 use embedded_can::Id;
-use libc::{sa_family_t, sockaddr, sockaddr_can, sockaddr_storage, socklen_t};
+use libc::{sa_family_t, sockaddr, sockaddr_can, socklen_t};
 use nix::net::if_::if_nametoindex;
-use socket2::SockAddr;
+use socket2::{SockAddr, SockAddrStorage};
 use std::{fmt, io, mem, mem::size_of, os::raw::c_int};
 
 pub use libc::{AF_CAN, CAN_RAW, PF_CAN};
@@ -116,11 +116,11 @@ impl CanAddr {
     /// Converts the address into a `sockaddr_storage` type.
     /// The storage type is a generic socket address container with enough
     /// space to hold any address in the system (not just CAN addresses).
-    pub fn into_storage(self) -> (sockaddr_storage, socklen_t) {
+    pub fn into_storage(self) -> (SockAddrStorage, socklen_t) {
         let can_addr = self.as_bytes();
         let len = can_addr.len();
 
-        let mut storage: sockaddr_storage = unsafe { mem::zeroed() };
+        let mut storage = SockAddrStorage::zeroed();
         let sock_addr = crate::as_bytes_mut(&mut storage);
 
         sock_addr[..len].copy_from_slice(can_addr);
@@ -190,7 +190,7 @@ mod tests {
     fn test_addr_to_sock_addr() {
         let addr = CanAddr::new(IDX);
 
-        let (sock_addr, len) = addr.clone().into_storage();
+        let (sock_addr, len) = addr.into_storage();
 
         assert_eq!(CanAddr::len() as socklen_t, len);
         assert_eq!(as_bytes(&addr), &as_bytes(&sock_addr)[0..len as usize]);

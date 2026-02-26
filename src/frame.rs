@@ -1731,7 +1731,7 @@ mod tests {
                 assert_eq!(vtype, errors::ViolationType::BitStuffingError);
                 assert_eq!(location, errors::Location::Id0400);
             }
-            _ => assert!(false),
+            _ => panic!("expected protocol violation error"),
         }
     }
 
